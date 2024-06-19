@@ -42,36 +42,55 @@ export function getClient(apiKey: string): httpm.HttpClient {
   })
 }
 
+async function postMetricsIfAny(
+  http: httpm.HttpClient,
+  apiURL: string,
+  metrics: {series: Array<Record<string, unknown>>},
+  endpoint: string
+): Promise<void> {
+  // POST data
+  if (metrics.series.length) {
+    core.debug(`About to send ${metrics.series.length} metrics`)
+    const res: httpm.HttpClientResponse = await http.post(
+      `${apiURL}/api/${endpoint}`,
+      JSON.stringify(metrics)
+    )
+
+    if (res.message.statusCode === undefined || res.message.statusCode >= 400) {
+      throw new Error(
+        `HTTP request failed: ${res.message.statusMessage} ${res.message.statusCode}`
+      )
+    }
+  }
+}
+
 export async function sendMetrics(
   apiURL: string,
   apiKey: string,
   metrics: Metric[]
 ): Promise<void> {
   const http: httpm.HttpClient = getClient(apiKey)
-  const s = {series: Array()}
+  // distributions use a different procotol.
+  const distributions = {series: Array()}
+  const otherMetrics = {series: Array()}
   const now = Date.now() / 1000 // timestamp must be in seconds
 
   // build series payload containing our metrics
   for (const m of metrics) {
-    s.series.push({
+    const isDistribution = m.type === 'distribution'
+    const value = isDistribution ? [m.value] : m.value
+    const collector = isDistribution ? distributions : otherMetrics
+    collector.series.push({
       metric: m.name,
-      points: [[now, m.value]],
+      points: [[now, value]],
       type: m.type,
       host: m.host,
       tags: m.tags
     })
   }
 
-  // POST data
-  core.debug(`About to send ${metrics.length} metrics`)
-  const res: httpm.HttpClientResponse = await http.post(
-    `${apiURL}/api/v1/series`,
-    JSON.stringify(s)
-  )
-
-  if (res.message.statusCode === undefined || res.message.statusCode >= 400) {
-    throw new Error(`HTTP request failed: ${res.message.statusMessage}`)
-  }
+  await postMetricsIfAny(http, apiURL, otherMetrics, 'v1/series')
+  await postMetricsIfAny(http, apiURL, distributions, 'v1/distribution_points')
 }
 
 export async function sendEvents(
@@ -102,13 +121,13 @@ export async function sendEvents(
 export async function sendServiceChecks(
   apiURL: string,
   apiKey: string,
-  serviceCecks: ServiceCheck[]
+  serviceChecks: ServiceCheck[]
 ): Promise<void> {
   const http: httpm.HttpClient = getClient(apiKey)
   let errors = 0
 
-  core.debug(`About to send ${serviceCecks.length} service checks`)
-  for (const sc of serviceCecks) {
+  core.debug(`About to send ${serviceChecks.length} service checks`)
+  for (const sc of serviceChecks) {
     const res: httpm.HttpClientResponse = await http.post(
       `${apiURL}/api/v1/check_run`,
       JSON.stringify(sc)
@@ -121,7 +140,7 @@ export async function sendServiceChecks(
 
   if (errors > 0) {
     throw new Error(
-      `Failed sending ${errors} out of ${serviceCecks.length} events`
+      `Failed sending ${errors} out of ${serviceChecks.length} events`
     )
   }
 }

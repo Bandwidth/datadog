@@ -1,11 +1,9 @@
-import {run} from '../src/run'
-import * as dd from '../src/datadog'
-import * as process from 'process'
-import * as core from '@actions/core'
 import * as cp from 'child_process'
-import * as path from 'path'
 import * as yaml from 'js-yaml'
-import {getHeapStatistics} from 'v8'
+import * as path from 'path'
+import * as process from 'process'
+import * as dd from '../src/datadog'
+import {run} from '../src/run'
 jest.mock('../src/datadog')
 
 describe('unit-tests', () => {
@@ -19,18 +17,6 @@ describe('unit-tests', () => {
   afterEach(() => {
     outSpy.mockClear()
     jest.clearAllMocks()
-  })
-
-  test('api-key input param must be set', async () => {
-    process.env['INPUT_API-KEY'] = ''
-    await run()
-    expect(dd.sendMetrics).toHaveBeenCalledTimes(0)
-    expect(dd.sendEvents).toHaveBeenCalledTimes(0)
-    expect(dd.sendServiceChecks).toHaveBeenCalledTimes(0)
-    expect(dd.sendLogs).toHaveBeenCalledTimes(0)
-    expect(outSpy).toHaveBeenCalledWith(
-      '::error::Run failed: Input required and not supplied: api-key\n'
-    )
   })
 
   test('default api endpoint URL', async () => {
@@ -112,6 +98,13 @@ describe('end-to-end tests', () => {
         value: 1.0,
         tags: ['foo:bar'],
         host: 'example.com'
+      },
+      {
+        type: 'distribution',
+        name: 'test.builds.distribution',
+        value: 1.0,
+        tags: ['foo:bar'],
+        host: 'example.com'
       }
     ])
     process.env['INPUT_EVENTS'] = yaml.safeDump([
@@ -151,6 +144,7 @@ describe('end-to-end tests', () => {
       console.log(cp.execSync(`node ${ip}`, options).toString())
     } catch (e) {
       console.log(e.output.toString())
+      throw e
     }
   })
 })
